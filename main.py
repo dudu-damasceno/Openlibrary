@@ -3,7 +3,7 @@ import psycopg2
 
 
 class OpenLibraryAPI:
-    BASE_URL = 'https://openlibrary.org' 
+    BASE_URL = 'https://openlibrary.org'
 
     def __init__(self):
         pass
@@ -45,8 +45,26 @@ class DatabaseHandler:
             print("Pulando livro pois não possui linguagem.")
             return
 
+        editora_name = book.get('publisher', '')
+        if not editora_name:
+            print("Pulando livro pois não possui editora.")
+            return
+
+        categorias = book.get('subject', [])
+        if not categorias:
+            print("Pulando livro pois não possui categoria.")
+            return
+
+        if isinstance(editora_name, list):
+            editora_name = editora_name[0] if editora_name else None
+        if editora_name:
+            editora_name = editora_name.strip('{}"')
+            if len(editora_name) > 500:
+                print(f"Skipping book with editora_name longer than 500 characters: {editora_name[:50]}...")
+                return
+
         livro_key = book.get('key', '').split('/')[-1]
-        
+
         publish_year = book.get('publish_year')
         if isinstance(publish_year, list) and publish_year:
             ano_publicacao = int(publish_year[0])
@@ -58,17 +76,6 @@ class DatabaseHandler:
         languages = book.get('language', [])
         if not isinstance(languages, list):
             languages = [languages]
-
-        if len(livro_key) > 255:
-            print(f"Skipping book with livro_key longer than 255 characters: {livro_key[:50]}...")
-            return
-        if len(book.get('title', '')) > 255:
-            print(f"Skipping book with title longer than 255 characters: {book['title'][:50]}...")
-            return
-        if len(book.get('subtitle', '')) > 255:
-            print(f"Skipping book with subtitle longer than 255 characters: {book['subtitle'][:50]}...")
-            return
-
         try:
             self.cursor.execute(f"""
                 INSERT INTO {table_name} (livro_key, titulo, subtitulo, ano_publicacao, qtd_paginas, qtd_avaliacoes, capa_url)
@@ -76,7 +83,7 @@ class DatabaseHandler:
                 ON CONFLICT (livro_key) DO NOTHING
             """, (livro_key, book.get('title'), book.get('subtitle', ''), ano_publicacao, book.get('number_of_pages_median', 0), book.get('ratings_average', 0), f"https://covers.openlibrary.org/b/olid/{livro_key}-L.jpg"))
 
-            for subject in book.get('subject', []):
+            for subject in categorias:
                 subject = subject.strip()
                 self.cursor.execute("""
                     SELECT categoria_id FROM categoria
@@ -105,41 +112,32 @@ class DatabaseHandler:
                     ON CONFLICT (livro_key, categoria_id) DO NOTHING
                 """, (livro_key, categoria_id))
 
-            editora_name = book.get('publisher', '')
-            if isinstance(editora_name, list):
-                editora_name = editora_name[0] if editora_name else None
-            if editora_name:
-                editora_name = editora_name.strip('{}"')
-                if len(editora_name) > 500:
-                    print(f"Skipping book with editora_name longer than 500 characters: {editora_name[:50]}...")
-                    return
-
+            self.cursor.execute("""
+                SELECT editora_id FROM editora
+                WHERE nome = %s
+            """, (editora_name,))
+            editora_id_row = self.cursor.fetchone()
+            if editora_id_row:
+                editora_id = editora_id_row[0]
+            else:
                 self.cursor.execute("""
-                    SELECT editora_id FROM editora
-                    WHERE nome = %s
+                    INSERT INTO editora (nome)
+                    VALUES (%s)
+                    ON CONFLICT (nome) DO NOTHING
+                    RETURNING editora_id
                 """, (editora_name,))
+                self.conn.commit()
                 editora_id_row = self.cursor.fetchone()
                 if editora_id_row:
                     editora_id = editora_id_row[0]
                 else:
-                    self.cursor.execute("""
-                        INSERT INTO editora (nome)
-                        VALUES (%s)
-                        ON CONFLICT (nome) DO NOTHING
-                        RETURNING editora_id
-                    """, (editora_name,))
-                    self.conn.commit()
-                    editora_id_row = self.cursor.fetchone()
-                    if editora_id_row:
-                        editora_id = editora_id_row[0]
-                    else:
-                        return
+                    return
 
-                self.cursor.execute("""
-                    UPDATE livro
-                    SET editora_id = %s
-                    WHERE livro_key = %s
-                """, (editora_id, livro_key))
+            self.cursor.execute("""
+                UPDATE livro
+                SET editora_id = %s
+                WHERE livro_key = %s
+            """, (editora_id, livro_key))
 
             print('Inserindo autores....')
             author_keys = book.get('author_key', [])
@@ -249,8 +247,8 @@ def main():
     book_processor = BookProcessor(api, db_handler)
 
     query = 'first_publish_year:[2000 TO 2023] AND edition_count:1'
-    fields = 'publisher,language,author_key,author_name,title,subtitle,isbn,publish_year,number_of_pages_median,key,person_facet,subject,ratings_average'
-    limit = 20
+    fields = 'publisher,language,author_key,author_name,title,subtitle,publish_year,number_of_pages_median,key,subject,ratings_average'
+    limit = 10
 
     book_processor.process_books(query, fields, limit)
 
@@ -258,4 +256,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
