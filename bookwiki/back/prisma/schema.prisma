@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model autor {
+  autor_key     String        @id @db.VarChar(11)
+  nome          String?       @db.VarChar(255)
+  foto_url      String?       @db.VarChar(255)
+  qtd_trabalhos Int?
+  livro_autor   livro_autor[]
+}
+
+model categoria {
+  categoria_id    Int               @id @default(autoincrement())
+  nome            String?           @unique @db.VarChar(255)
+  livro_categoria livro_categoria[]
+}
+
+model editora {
+  editora_id Int     @id @default(autoincrement())
+  nome       String? @unique @db.VarChar(255)
+  livro      livro[]
+}
+
+model lingua {
+  lingua_id Int     @id @default(autoincrement())
+  sigla     String? @unique @db.VarChar(3)
+  livro     livro[]
+}
+
+model livro {
+  livro_key       String            @id @db.VarChar(11)
+  titulo          String?           @db.VarChar(255)
+  subtitulo       String?           @db.VarChar(255)
+  ano_publicacao  Int?
+  qtd_paginas     Int?
+  qtd_avaliacoes  Int?
+  capa_url        String?           @db.VarChar(255)
+  editora_id      Int?
+  lingua_sigla    String?           @db.VarChar(5)
+  editora         editora?          @relation(fields: [editora_id], references: [editora_id], onDelete: NoAction, onUpdate: NoAction)
+  lingua          lingua?           @relation(fields: [lingua_sigla], references: [sigla], onDelete: NoAction, onUpdate: NoAction)
+  livro_autor     livro_autor[]
+  livro_categoria livro_categoria[]
+}
+
+model livro_autor {
+  livro_key String @db.VarChar(11)
+  autor_key String @db.VarChar(11)
+  autor     autor  @relation(fields: [autor_key], references: [autor_key], onDelete: NoAction, onUpdate: NoAction)
+  livro     livro  @relation(fields: [livro_key], references: [livro_key], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([livro_key, autor_key])
+}
+
+model livro_categoria {
+  livro_key    String    @db.VarChar(11)
+  categoria_id Int
+  categoria    categoria @relation(fields: [categoria_id], references: [categoria_id], onDelete: NoAction, onUpdate: NoAction)
+  livro        livro     @relation(fields: [livro_key], references: [livro_key], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([livro_key, categoria_id])
+}
