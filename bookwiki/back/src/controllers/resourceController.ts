@@ -13,13 +13,43 @@ export const getRelationshipsForTable = async (tableName: string, prismaClient: 
       return null;
     }
 
-    const relations = model.fields
-      .filter((field: any) => field.relationName)
-      .map((field: any) => ({
-        field: field.name,
-        relation: field.type,
-        relatedTable: dmmf.datamodel.models.find((m: any) => m.name === field.type)?.name,
-      }));
+    const intermediateTables = ['livro_autor', 'livro_categoria'];
+    const relations = [];
+
+    for (const field of model.fields) {
+      if (field.relationName) {
+        const relatedTable = dmmf.datamodel.models.find((m: any) => m.name === field.type)?.name;
+
+        if (relatedTable && !intermediateTables.includes(relatedTable)) {
+          relations.push({
+            field: field.name,
+            relation: field.type,
+            relatedTable,
+          });
+        }
+
+        // Check if the related table is an intermediate table and find its relations
+        if (relatedTable && intermediateTables.includes(relatedTable)) {
+          const intermediateModel = dmmf.datamodel.models.find((m: any) => m.name === relatedTable);
+
+          if (intermediateModel) {
+            for (const intermediateField of intermediateModel.fields) {
+              if (intermediateField.relationName && intermediateField.type !== tableName) {
+                const finalRelatedTable = dmmf.datamodel.models.find((m: any) => m.name === intermediateField.type)?.name;
+
+                if (finalRelatedTable) {
+                  relations.push({
+                    field: `${field.name}.${intermediateField.name}`,
+                    relation: intermediateField.type,
+                    relatedTable: finalRelatedTable,
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
 
     return relations;
   } catch (error) {
@@ -28,10 +58,13 @@ export const getRelationshipsForTable = async (tableName: string, prismaClient: 
   }
 };
 
+
 export const getAllTableNames = async (prismaClient: PrismaClient) => {
   try {
     const dmmf = await getDMMF({ datamodelPath: "prisma/schema.prisma" });
-    return dmmf.datamodel.models.map((model: any) => model.name);
+    return dmmf.datamodel.models
+    .map((model: any) => model.name)
+    .filter((name: string) => name !== 'livro_autor' && name !== 'livro_categoria');
   } catch (error) {
     console.error("Erro ao buscar nomes das tabelas:", error);
     throw error;
