@@ -35,7 +35,7 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
   const [tables, setTables] = React.useState<string[]>([]);
   const [attributes, setAttributes] = React.useState<Attribute[]>([]);
   const [selectedTable, setSelectedTable] = React.useState<string>('');
-  const [selectedAttributes, setSelectedAttributes] = React.useState<Attribute[]>([]);
+  const [selectedAttributes, setSelectedAttributes] = React.useState<string[]>([]);
   const [filters, setFilters] = React.useState<Filter[]>([]);
   const [relationships, setRelationships] = React.useState<Relationship[]>([]);
   const [selectedRelationships, setSelectedRelationships] = React.useState<string[]>([]);
@@ -112,13 +112,20 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
 
   const handleFilterChange = (index: number, field: keyof Filter, value: string) => {
     const updatedFilters = [...filters];
-    updatedFilters[index][field] = value;
+    if (field === 'attribute') {
+      const selectedAttribute = [...attributes, ...Object.values(relationshipAttributes).flat()].find(attr => attr.attributeName === value);
+      if (selectedAttribute) {
+        updatedFilters[index][field] = selectedAttribute;
+      }
+    } else {
+      updatedFilters[index][field] = value;
+    }
     setFilters(updatedFilters);
   };
 
   const handleAddRelationship = async (relationship: Relationship) => {
     setSelectedRelationships([...selectedRelationships, relationship.relatedTable]);
-    await fetchRelatedTableAttributes(relationship.relatedTable); // Fetch dos atributos da tabela final, por exemplo 'autor'
+    await fetchRelatedTableAttributes(relationship.relatedTable);
   };
 
   const handleRemoveRelationship = (relatedTable: string) => {
@@ -130,18 +137,18 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
     try {
       const relationshipAttrs: { [key: string]: string[] } = {};
       selectedRelationships.forEach(rel => {
-        // Use o nome da tabela final ao enviar os atributos para o backend
         relationshipAttrs[rel] = relationshipAttributes[rel]?.map(attr => attr.attributeName) || [];
       });
 
       const requestData = {
         tableName: selectedTable,
         filters: filters.map(filter => ({
+          tableName: filter.attribute.tableName, // Inclui o nome da tabela no filtro
           field: filter.attribute.attributeName,
           operator: filter.operator,
           value: filter.value,
         })),
-        attributes: selectedAttributes.map(attr => attr.attributeName),
+        attributes: selectedAttributes,
         relationshipAttributes: relationshipAttrs,
         orderBy: orderBy || undefined,
         limit: limit || undefined,
@@ -190,11 +197,11 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
               labelId="attributes-select-label"
               multiple
               value={selectedAttributes}
-              onChange={event => setSelectedAttributes(event.target.value as Attribute[])}
-              renderValue={selected => (selected as Attribute[]).map(attr => attr.attributeName).join(', ')}
+              onChange={event => setSelectedAttributes(event.target.value as string[])}
+              renderValue={selected => (selected as string[]).join(', ')}
             >
               {attributes.map(attribute => (
-                <MenuItem key={attribute.attributeName} value={attribute}>
+                <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
                   {attribute.attributeName}
                 </MenuItem>
               ))}
@@ -210,15 +217,12 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
                 <InputLabel id={`filter-attribute-select-label-${index}`}>Atributo do Filtro</InputLabel>
                 <Select
                   labelId={`filter-attribute-select-label-${index}`}
-                  value={filter.attribute}
-                  onChange={event => {
-                    const selectedAttribute = event.target.value as Attribute;
-                    handleFilterChange(index, 'attribute', selectedAttribute.attributeName);
-                  }}
+                  value={filter.attribute.attributeName}
+                  onChange={event => handleFilterChange(index, 'attribute', event.target.value as string)}
                 >
-                  {attributes.map(attribute => (
-                    <MenuItem key={attribute.attributeName} value={attribute}>
-                      {attribute.attributeName}
+                  {[...attributes, ...Object.values(relationshipAttributes).flat()].map(attribute => (
+                    <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
+                      {attribute.tableName}: {attribute.attributeName}
                     </MenuItem>
                   ))}
                 </Select>
@@ -251,7 +255,7 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
                 const updatedFilters = [...filters];
                 updatedFilters.splice(index, 1);
                 setFilters(updatedFilters);
-              }} style={{ marginTop: '0.5rem' }}>
+              }} style={{ marginLeft: '1rem' }}>
                 <ClearIcon />
               </IconButton>
             </div>
@@ -264,70 +268,69 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
               multiple
               value={selectedRelationships}
               onChange={event => {
-                const selectedRelationships = event.target.value as string[];
-                setSelectedRelationships(selectedRelationships);
-                selectedRelationships.forEach(relationship => {
-                  fetchRelatedTableAttributes(relationship); // Fetch dos atributos da tabela final, por exemplo 'autor'
-                });
+                const selectedValues = event.target.value as string[];
+                const newlyAdded = selectedValues.find(val => !selectedRelationships.includes(val));
+                if (newlyAdded) {
+                  const relationship = relationships.find(rel => rel.relatedTable === newlyAdded);
+                  if (relationship) handleAddRelationship(relationship);
+                } else {
+                  setSelectedRelationships(selectedValues);
+                }
               }}
               renderValue={selected => (selected as string[]).join(', ')}
             >
               {relationships.map(relationship => (
                 <MenuItem key={relationship.relatedTable} value={relationship.relatedTable}>
-                  {relationship.relation} ({relationship.relatedTable})
+                  {relationship.relation}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
 
-          {selectedRelationships.map(relationship => (
-            <div key={relationship} style={{ marginTop: '1rem' }}>
-              <FormControl fullWidth>
-                <InputLabel id={`relationship-attributes-select-label-${relationship}`}>Atributos do Relacionamento: {relationship}</InputLabel>
-                <Select
-                  labelId={`relationship-attributes-select-label-${relationship}`}
-                  multiple
-                  value={relationshipAttributes[relationship] || []}
-                  onChange={event => {
-                    const selectedAttributes = event.target.value as Attribute[];
-                    setRelationshipAttributes({
-                      ...relationshipAttributes,
-                      [relationship]: selectedAttributes,
-                    });
-                  }}
-                  renderValue={selected => (selected as Attribute[]).map(attr => attr.attributeName).join(', ')}
-                >
-                  {relationshipAttributes[relationship]?.map(attribute => (
-                    <MenuItem key={attribute.attributeName} value={attribute}>
-                      {attribute.attributeName}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <IconButton onClick={() => handleRemoveRelationship(relationship)} style={{ marginTop: '0.5rem' }}>
-                <ClearIcon />
-              </IconButton>
-            </div>
+          {selectedRelationships.map(relatedTable => (
+            <FormControl fullWidth key={relatedTable} style={{ marginTop: '1rem' }}>
+              <InputLabel id={`relationship-attributes-select-label-${relatedTable}`}>Atributos de {relatedTable}</InputLabel>
+              <Select
+                labelId={`relationship-attributes-select-label-${relatedTable}`}
+                multiple
+                value={relationshipAttributes[relatedTable]?.map(attr => attr.attributeName) || []}
+                onChange={event => {
+                  const selectedValues = event.target.value as string[];
+                  setRelationshipAttributes({
+                    ...relationshipAttributes,
+                    [relatedTable]: selectedValues.map(value => ({
+                      tableName: relatedTable,
+                      attributeName: value,
+                    })),
+                  });
+                }}
+                renderValue={selected => (selected as string[]).join(', ')}
+              >
+                {relationshipAttributes[relatedTable]?.map(attribute => (
+                  <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
+                    {attribute.attributeName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           ))}
 
           <TextField
             label="Limite"
             type="number"
             value={limit}
-            onChange={event => setLimit(parseInt(event.target.value))}
-            fullWidth
-            style={{ marginTop: '1rem' }}
+            onChange={event => setLimit(event.target.value === '' ? '' : parseInt(event.target.value, 10))}
+            style={{ width: '50%', marginTop: '1rem' }}
           />
 
-          <FormControl fullWidth style={{ marginTop: '1rem' }}>
-            <InputLabel id="order-by-select-label">Ordenar Por</InputLabel>
+          <FormControl fullWidth>
+            <InputLabel id="order-by-select-label">Ordenar por</InputLabel>
             <Select
               labelId="order-by-select-label"
               value={orderBy}
               onChange={event => setOrderBy(event.target.value as string)}
             >
-              {selectedAttributes.map(attribute => (
+              {attributes.map(attribute => (
                 <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
                   {attribute.attributeName}
                 </MenuItem>
@@ -339,7 +342,7 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
             Gerar Relatório
           </Button>
 
-          <Button onClick={handleClearSelection} style={{ marginTop: '1rem' }}>
+          <Button onClick={handleClearSelection} variant="outlined" style={{ marginTop: '1rem', marginLeft: '1rem' }}>
             Limpar Seleção
           </Button>
         </>

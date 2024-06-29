@@ -64,7 +64,7 @@ const getPrismaClient = (tableName: string) => {
 };
 
 const parseValue = (field: string, value: any) => {
-  if (field.endsWith("_id")) {
+  if (typeof value === 'string' && !isNaN(Number(value))) {
     return parseInt(value, 10);
   }
   return value;
@@ -101,11 +101,11 @@ export const generateReport = async (req: Request, res: Response) => {
 
     if (attributes.length > 0) {
       query.select = {};
-    
+
       attributes.forEach((attr: string | number) => {
         if (typeof attr === 'string') {
           const [modelAttr, relationAttr] = attr.split(".");
-    
+
           if (relationAttr) {
             if (!query.select[modelAttr]) {
               query.select[modelAttr] = { select: {} };
@@ -117,10 +117,9 @@ export const generateReport = async (req: Request, res: Response) => {
         }
       });
     }
-    
 
     if (relationships.length > 0 && relationshipAttributes) {
-      relationships.forEach(async (rel: string) => {
+      for (const rel of relationships) {
         if (!query.select[rel]) {
           query.select[rel] = { select: {} };
         }
@@ -132,15 +131,25 @@ export const generateReport = async (req: Request, res: Response) => {
           const validField = await getValidFieldForRelation(rel);
           query.select[rel].select[validField] = true;
         }
-      });
+      }
     }
 
     if (filters && filters.length > 0) {
       query.where = {};
 
       filters.forEach((filter: any) => {
-        const { field, operator, value } = filter;
-        query.where[field] = buildFilterCondition(operator, value);
+        const { field, operator, value, tableName: filterTable } = filter;
+
+        const parsedValue = parseValue(field, value);
+
+        if (filterTable === tableName) {
+          query.where[field] = buildFilterCondition(operator, parsedValue);
+        } else {
+          if (!query.where[filterTable]) {
+            query.where[filterTable] = {};
+          }
+          query.where[filterTable][field] = buildFilterCondition(operator, parsedValue);
+        }
       });
     }
 
