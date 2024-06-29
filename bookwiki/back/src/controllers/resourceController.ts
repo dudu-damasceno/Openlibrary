@@ -2,13 +2,9 @@ import { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import { getDMMF } from "@prisma/internals";
 
-const prisma = new PrismaClient(); // Inicializa o PrismaClient
+const prisma = new PrismaClient();
 
-// Função para obter relacionamentos para uma tabela específica
-export const getRelationshipsForTable = async (
-  tableName: string,
-  prismaClient: PrismaClient
-) => {
+export const getRelationshipsForTable = async (tableName: string, prismaClient: PrismaClient) => {
   try {
     const dmmf = await getDMMF({ datamodelPath: "prisma/schema.prisma" });
     const model = dmmf.datamodel.models.find((m: any) => m.name === tableName);
@@ -22,22 +18,16 @@ export const getRelationshipsForTable = async (
       .map((field: any) => ({
         field: field.name,
         relation: field.type,
-        relatedTable: dmmf.datamodel.models.find(
-          (m: any) => m.name === field.type
-        )?.name,
+        relatedTable: dmmf.datamodel.models.find((m: any) => m.name === field.type)?.name,
       }));
 
     return relations;
   } catch (error) {
-    console.error(
-      `Erro ao buscar relacionamentos para a tabela ${tableName}:`,
-      error
-    );
+    console.error(`Erro ao buscar relacionamentos para a tabela ${tableName}:`, error);
     throw error;
   }
 };
 
-// Função para obter todos os nomes de tabelas
 export const getAllTableNames = async (prismaClient: PrismaClient) => {
   try {
     const dmmf = await getDMMF({ datamodelPath: "prisma/schema.prisma" });
@@ -48,7 +38,6 @@ export const getAllTableNames = async (prismaClient: PrismaClient) => {
   }
 };
 
-// Função para buscar atributos de uma tabela específica
 export const getTableAttributes = async (tableName: string) => {
   try {
     const dmmf = await getDMMF({ datamodelPath: "prisma/schema.prisma" });
@@ -64,49 +53,43 @@ export const getTableAttributes = async (tableName: string) => {
 
     return attributes;
   } catch (error) {
-    console.error(
-      `Erro ao buscar atributos para a tabela ${tableName}:`,
-      error
-    );
+    console.error(`Erro ao buscar atributos para a tabela ${tableName}:`, error);
     throw error;
   }
 };
 
-// Função auxiliar para obter o cliente Prisma correto baseado no nome da tabela
 const getPrismaClient = (tableName: string) => {
   const modelName = tableName.charAt(0).toLowerCase() + tableName.slice(1);
   return (prisma as any)[modelName];
 };
 
-// Função para buscar recursos específicos
-export const getResources = async (req: Request, res: Response) => {
-  const resource = req.params.resource;
-
-  try {
-    let result: any[] = [];
-    const prismaClient = getPrismaClient(resource);
-
-    if (!prismaClient) {
-      return res.status(404).json({ error: "Recurso não encontrado" });
-    }
-
-    result = await prismaClient.findMany();
-
-    res.status(200).json(result);
-  } catch (error) {
-    console.error(`Erro ao buscar ${resource}:`, error);
-    res.status(500).json({ error: `Erro ao buscar ${resource}` });
+const parseValue = (field: string, value: any) => {
+  if (field.endsWith("_id")) {
+    return parseInt(value, 10);
   }
+  return value;
 };
 
-// Função para gerar relatório com base nas opções selecionadas pelo usuário
+const getValidFieldForRelation = async (relationName: string) => {
+  const dmmf = await getDMMF({ datamodelPath: "prisma/schema.prisma" });
+  const model = dmmf.datamodel.models.find((m: any) => m.name === relationName);
+
+  if (!model) {
+    throw new Error(`Relacionamento '${relationName}' não encontrado`);
+  }
+
+  const validField = model.fields.find((field: any) => !field.relationName);
+  if (!validField) {
+    throw new Error(`Nenhum campo válido encontrado para o relacionamento '${relationName}'`);
+  }
+
+  return validField.name;
+};
+
 export const generateReport = async (req: Request, res: Response) => {
-  const { tableName, filter, attributes, orderBy, limit } = req.body;
+  const { tableName, filters, attributes, relationshipAttributes, orderBy, limit, relationships } = req.body;
   console.log("Dados recebidos:", req.body);
-  console.log("Relacionamento:", filter?.relationship);
-  console.log("Filtros:", filter);
-  console.log("Ordenação:", orderBy);
-  console.log("Limite:", limit);
+
   try {
     const prismaClient = getPrismaClient(tableName);
 
@@ -114,83 +97,106 @@ export const generateReport = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Tabela não encontrada" });
     }
 
-    // Limpa os nomes dos atributos para remover o prefixo da tabela
-    const cleanedAttributes = attributes.map((attr: string) =>
-      attr.split(".").pop()
-    );
+    const query: any = {};
 
-    // Base da consulta Prisma
-    const query: any = {
-      select: cleanedAttributes.reduce((acc: any, attr: string) => {
-        acc[attr] = true;
-        return acc;
-      }, {}),
-    };
+    if (attributes.length > 0) {
+      query.select = {};
+    
+      attributes.forEach((attr: string | number) => {
+        if (typeof attr === 'string') {
+          const [modelAttr, relationAttr] = attr.split(".");
+    
+          if (relationAttr) {
+            if (!query.select[modelAttr]) {
+              query.select[modelAttr] = { select: {} };
+            }
+            query.select[modelAttr].select[relationAttr] = true;
+          } else {
+            query.select[modelAttr] = true;
+          }
+        }
+      });
+    }
+    
 
-    // Verifica se há filtros para adicionar à consulta
-    if (filter && filter.field && filter.operator && filter.value) {
-      const field = filter.field.split(".").pop();
-      const { operator, value } = filter;
+    if (relationships.length > 0 && relationshipAttributes) {
+      relationships.forEach(async (rel: string) => {
+        if (!query.select[rel]) {
+          query.select[rel] = { select: {} };
+        }
+        if (relationshipAttributes[rel]?.length > 0) {
+          relationshipAttributes[rel].forEach((attr: string | number) => {
+            query.select[rel].select[attr] = true;
+          });
+        } else {
+          const validField = await getValidFieldForRelation(rel);
+          query.select[rel].select[validField] = true;
+        }
+      });
+    }
 
+    if (filters && filters.length > 0) {
       query.where = {};
-      switch (operator) {
-        case "equals":
-          query.where[field] = parseValue(field, value);
-          break;
-        case "not equals":
-          query.where[field] = { not: parseValue(field, value) };
-          break;
-        case "contains":
-          query.where[field] = { contains: value };
-          break;
-        case "starts with":
-          query.where[field] = { startsWith: value };
-          break;
-        case "ends with":
-          query.where[field] = { endsWith: value };
-          break;
-        case "greater than":
-          query.where[field] = { gt: parseValue(field, value) };
-          break;
-        case "less than":
-          query.where[field] = { lt: parseValue(field, value) };
-          break;
-        default:
-          throw new Error(`Operador '${operator}' não suportado`);
-      }
+
+      filters.forEach((filter: any) => {
+        const { field, operator, value } = filter;
+        query.where[field] = buildFilterCondition(operator, value);
+      });
     }
 
-    // Adiciona a ordenação se estiver presente
     if (orderBy) {
-      query.orderBy = { [orderBy.split(".").pop()]: "asc" }; // Pode ser modificado conforme necessário
+      query.orderBy = { [orderBy.split(".").pop()]: "asc" };
     }
 
-    // Adiciona o limite se estiver presente
     if (limit) {
       query.take = limit;
     }
 
-    // Adiciona os relacionamentos se estiverem presentes
-    if (filter?.relationship) {
-      query.include = {
-        [filter.relationship]: true,
-      };
-    }
+    console.log("Query final:", query);
 
-    // Executa a consulta Prisma
     const reportData = await prismaClient.findMany(query);
-    console.log(query); // Log da consulta gerada
-    res.status(200).json(reportData);
+    console.log("Resultado da consulta:", reportData);
+
+    // Mapeia os dados para incluir os autores diretamente em vez de apenas as chaves
+    const mappedReportData = await Promise.all(reportData.map(async (item: any) => {
+      if (item.livro_autor) {
+        const livroAutorDetails = await Promise.all(item.livro_autor.map(async (la: any) => {
+          const autorDetails = await prisma.autor.findUnique({
+            where: { autor_key: la.autor_key }
+          });
+          return { ...la, autor: autorDetails };
+        }));
+        return { ...item, livro_autor: livroAutorDetails };
+      }
+      return item;
+    }));
+
+    res.status(200).json(mappedReportData);
   } catch (error) {
     console.error("Erro ao gerar relatório:", error);
     res.status(500).json({ error: "Erro ao gerar relatório" });
   }
 };
 
-// Função auxiliar para converter o valor para o tipo apropriado baseado no campo
-const parseValue = (field: string, value: any) => {
-  if (field.endsWith("_id")) {
-    return parseInt(value, 10);
+function buildFilterCondition(operator: string, value: any) {
+  switch (operator) {
+    case "equals":
+      return value;
+    case "not equals":
+      return { not: value };
+    case "contains":
+      return { contains: value };
+    case "starts with":
+      return { startsWith: value };
+    case "ends with":
+      return { endsWith: value };
+    case "greater than":
+      return { gt: value };
+    case "less than":
+      return { lt: value };
+    default:
+      throw new Error(`Operador '${operator}' não suportado`);
   }
-  return value;
-};
+}
+
+export default generateReport;

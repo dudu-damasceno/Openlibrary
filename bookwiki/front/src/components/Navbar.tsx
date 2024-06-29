@@ -6,6 +6,7 @@ import ListItem from '@mui/material/ListItem';
 import ListItemText from '@mui/material/ListItemText';
 import Typography from '@mui/material/Typography';
 
+
 const Navbar: React.FC = () => {
   return (
     <Drawer
@@ -24,7 +25,7 @@ const Navbar: React.FC = () => {
       anchor="left"
     >
       <div style={{ marginTop: '20px', textAlign: 'center' }}>
-        <img src="./" alt="Logo" style={{ width: '80%', marginBottom: '20px' }} />
+        <img src="./Bookwiki.png" alt="Logo" style={{ width: '80%', marginBottom: '20px' }} />
       </div>
       <List>
         <ListItem button>

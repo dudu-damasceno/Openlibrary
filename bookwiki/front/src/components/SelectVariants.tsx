@@ -5,6 +5,8 @@ import FormControl from '@mui/material/FormControl';
 import Select, { SelectChangeEvent } from '@mui/material/Select';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import ClearIcon from '@mui/icons-material/Clear';
 import axios from 'axios';
 
 interface Attribute {
@@ -18,6 +20,12 @@ interface Relationship {
   relatedTable: string;
 }
 
+interface Filter {
+  attribute: Attribute;
+  operator: string;
+  value: string;
+}
+
 interface SelectVariantsProps {
   setTableName: React.Dispatch<React.SetStateAction<string>>;
   setTableData: React.Dispatch<React.SetStateAction<any[]>>;
@@ -28,14 +36,12 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
   const [attributes, setAttributes] = React.useState<Attribute[]>([]);
   const [selectedTable, setSelectedTable] = React.useState<string>('');
   const [selectedAttributes, setSelectedAttributes] = React.useState<Attribute[]>([]);
-  const [filterField, setFilterField] = React.useState<Attribute | null>(null);
-  const [filterOperator, setFilterOperator] = React.useState<string>('equals');
-  const [filterValue, setFilterValue] = React.useState<string>('');
-  const [filterRelationship, setFilterRelationship] = React.useState<Relationship | null>(null);
-  const [limit, setLimit] = React.useState<number | ''>('');
-
+  const [filters, setFilters] = React.useState<Filter[]>([]);
   const [relationships, setRelationships] = React.useState<Relationship[]>([]);
-  const [relatedTableAttributes, setRelatedTableAttributes] = React.useState<Attribute[]>([]);
+  const [selectedRelationships, setSelectedRelationships] = React.useState<string[]>([]);
+  const [relationshipAttributes, setRelationshipAttributes] = React.useState<{ [key: string]: Attribute[] }>({});
+  const [limit, setLimit] = React.useState<number | ''>('');
+  const [orderBy, setOrderBy] = React.useState<string>('');
 
   React.useEffect(() => {
     const fetchTables = async () => {
@@ -53,13 +59,13 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
   const fetchAttributes = async (tableName: string) => {
     try {
       const response = await axios.get<string[]>(`http://localhost:5000/api/table/attributes/${tableName}`);
-      const attributesData = response.data.map(attribute => ({
+      const attributesData = response.data.map((attribute: string) => ({
         tableName,
-        attributeName: attribute
+        attributeName: attribute,
       }));
       setAttributes(attributesData);
     } catch (error) {
-      console.error(`Erro ao buscar atributos da tabela ${tableName}:`, error);
+      console.error('Erro ao buscar atributos:', error);
     }
   };
 
@@ -68,92 +74,107 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
       const response = await axios.get<Relationship[]>(`http://localhost:5000/api/table/relationships/${tableName}`);
       setRelationships(response.data);
     } catch (error) {
-      console.error(`Erro ao buscar relacionamentos da tabela ${tableName}:`, error);
+      console.error('Erro ao buscar relacionamentos:', error);
     }
   };
 
-  const fetchRelatedTableAttributes = async (relatedTableName: string) => {
+  const fetchRelatedTableAttributes = async (relatedTable: string) => {
     try {
-      const response = await axios.get<string[]>(`http://localhost:5000/api/table/attributes/${relatedTableName}`);
-      const attributesData = response.data.map(attribute => ({
-        tableName: relatedTableName,
-        attributeName: attribute
+      const response = await axios.get<string[]>(`http://localhost:5000/api/table/attributes/${relatedTable}`);
+      const relatedAttributesData = response.data.map((attribute: string) => ({
+        tableName: relatedTable,
+        attributeName: attribute,
       }));
-      setRelatedTableAttributes(attributesData);
+      setRelationshipAttributes({
+        ...relationshipAttributes,
+        [relatedTable]: relatedAttributesData,
+      });
     } catch (error) {
-      console.error(`Erro ao buscar atributos da tabela ${relatedTableName}:`, error);
+      console.error('Erro ao buscar atributos da tabela relacionada:', error);
     }
   };
 
-  const handleChangeTableName = async (event: SelectChangeEvent<string>) => {
+  const handleTableChange = async (event: SelectChangeEvent<string>) => {
     const tableName = event.target.value;
     setSelectedTable(tableName);
     setTableName(tableName);
+    setSelectedAttributes([]);
+    setFilters([]);
+    setSelectedRelationships([]);
+    setRelationshipAttributes({});
+    await fetchAttributes(tableName);
+    await fetchRelationships(tableName);
+  };
 
-    fetchAttributes(tableName);
-    fetchRelationships(tableName);
+  const handleAddFilter = () => {
+    setFilters([...filters, { attribute: { tableName: selectedTable, attributeName: '' }, operator: 'equals', value: '' }]);
+  };
+
+  const handleFilterChange = (index: number, field: keyof Filter, value: string) => {
+    const updatedFilters = [...filters];
+    updatedFilters[index][field] = value;
+    setFilters(updatedFilters);
+  };
+
+  const handleAddRelationship = async (relationship: Relationship) => {
+    setSelectedRelationships([...selectedRelationships, relationship.relatedTable]);
+    await fetchRelatedTableAttributes(relationship.relatedTable); // Fetch dos atributos da tabela final, por exemplo 'autor'
+  };
+
+  const handleRemoveRelationship = (relatedTable: string) => {
+    const updatedRelationships = selectedRelationships.filter(rel => rel !== relatedTable);
+    setSelectedRelationships(updatedRelationships);
   };
 
   const handleGenerateReport = async () => {
     try {
-      let selectedAttributesToSend: string[] = selectedAttributes.map(attr => `${attr.tableName}.${attr.attributeName}`);
-
-      // Incluir atributos da tabela base nos atributos selecionados para enviar na consulta
-      if (filterField && !filterRelationship) {
-        selectedAttributesToSend.push(`${selectedTable}.${filterField.attributeName}`);
-      }
-
-      // Incluir atributos da tabela relacionada nos atributos selecionados para enviar na consulta
-      if (filterRelationship && filterRelationship.relatedTable && filterField) {
-        selectedAttributesToSend.push(`${filterRelationship.relatedTable}.${filterField.attributeName}`);
-      }
-
-      const response = await axios.post('http://localhost:5000/api/generate-report', {
-        tableName: selectedTable,
-        attributes: selectedAttributesToSend,
-        filter: {
-          field: filterField ? `${filterField.tableName}.${filterField.attributeName}` : null,
-          operator: filterOperator,
-          value: filterValue,
-          relationship: filterRelationship ? filterRelationship.field : null,
-        },
-        limit: limit || undefined,
+      const relationshipAttrs: { [key: string]: string[] } = {};
+      selectedRelationships.forEach(rel => {
+        // Use o nome da tabela final ao enviar os atributos para o backend
+        relationshipAttrs[rel] = relationshipAttributes[rel]?.map(attr => attr.attributeName) || [];
       });
+
+      const requestData = {
+        tableName: selectedTable,
+        filters: filters.map(filter => ({
+          field: filter.attribute.attributeName,
+          operator: filter.operator,
+          value: filter.value,
+        })),
+        attributes: selectedAttributes.map(attr => attr.attributeName),
+        relationshipAttributes: relationshipAttrs,
+        orderBy: orderBy || undefined,
+        limit: limit || undefined,
+        relationships: selectedRelationships,
+      };
+
+      const response = await axios.post('http://localhost:5000/api/generate-report', requestData);
       setTableData(response.data);
     } catch (error) {
       console.error('Erro ao gerar relatório:', error);
     }
   };
 
-  const handleFilterFieldChange = (event: SelectChangeEvent<any>) => {
-    const selectedAttribute = event.target.value as Attribute;
-    setFilterField(selectedAttribute);
-  };
-  
-  const handleFilterRelationshipChange = (event: SelectChangeEvent<string>) => {
-    const selectedRelationship = relationships.find(rel => rel.field === event.target.value) || null;
-    setFilterRelationship(selectedRelationship);
-
-    if (selectedRelationship) {
-      fetchRelatedTableAttributes(selectedRelationship.relatedTable);
-    } else {
-      setRelatedTableAttributes([]);
-    }
+  const handleClearSelection = () => {
+    setSelectedTable('');
+    setSelectedAttributes([]);
+    setFilters([]);
+    setSelectedRelationships([]);
+    setRelationshipAttributes({});
+    setLimit('');
+    setOrderBy('');
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <FormControl variant="standard" sx={{ m: 1, minWidth: 300 }}>
-        <InputLabel id="select-table-label">Selecione uma Tabela</InputLabel>
+    <div>
+      <FormControl fullWidth>
+        <InputLabel id="table-select-label">Tabela</InputLabel>
         <Select
-          labelId="select-table-label"
-          id="select-table"
+          labelId="table-select-label"
           value={selectedTable}
-          onChange={handleChangeTableName}
-          label="Tabela"
-          fullWidth
+          onChange={handleTableChange}
         >
-          {tables.map((table) => (
+          {tables.map(table => (
             <MenuItem key={table} value={table}>
               {table}
             </MenuItem>
@@ -162,108 +183,167 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
       </FormControl>
 
       {selectedTable && (
-        <FormControl variant="standard" sx={{ m: 1, minWidth: 300 }}>
-          <InputLabel id="select-attributes-label">Selecione Atributos da Tabela Base</InputLabel>
-          <Select
-            labelId="select-attributes-label"
-            id="select-attributes"
-            multiple
-            value={selectedAttributes}
-            onChange={(event) => setSelectedAttributes(event.target.value as Attribute[])}
-            renderValue={(selected) => (selected as Attribute[]).map(attr => `${attr.tableName}.${attr.attributeName}`).join(', ')}
-            fullWidth
-          >
-            {attributes.map((attribute) => (
-              <MenuItem key={`${attribute.tableName}.${attribute.attributeName}`} value={attribute}>
-                {`${attribute.tableName}.${attribute.attributeName}`}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      )}
-
-      {selectedTable && (
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-          <FormControl variant="standard" sx={{ m: 1, minWidth: 300 }}>
-            <InputLabel id="select-filter-field-label">Selecione Atributo para Filtro</InputLabel>
+        <>
+          <FormControl fullWidth>
+            <InputLabel id="attributes-select-label">Atributos</InputLabel>
             <Select
-              labelId="select-filter-field-label"
-              id="select-filter-field"
-              value={filterField || ''}
-              onChange={handleFilterFieldChange}
-              fullWidth
+              labelId="attributes-select-label"
+              multiple
+              value={selectedAttributes}
+              onChange={event => setSelectedAttributes(event.target.value as Attribute[])}
+              renderValue={selected => (selected as Attribute[]).map(attr => attr.attributeName).join(', ')}
             >
-              {attributes.map((attribute) => (
-                <MenuItem key={`${attribute.tableName}.${attribute.attributeName}`} value={attribute}>
-                  {`${attribute.tableName}.${attribute.attributeName}`}
+              {attributes.map(attribute => (
+                <MenuItem key={attribute.attributeName} value={attribute}>
+                  {attribute.attributeName}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
 
-          <FormControl variant="standard" sx={{ m: 1, minWidth: 200 }}>
-            <InputLabel id="select-filter-operator-label">Operador</InputLabel>
+          <Button onClick={handleAddFilter} style={{ marginTop: '1rem' }}>
+            Adicionar Filtro
+          </Button>
+          {filters.map((filter, index) => (
+            <div key={index} style={{ marginTop: '1rem' }}>
+              <FormControl fullWidth>
+                <InputLabel id={`filter-attribute-select-label-${index}`}>Atributo do Filtro</InputLabel>
+                <Select
+                  labelId={`filter-attribute-select-label-${index}`}
+                  value={filter.attribute}
+                  onChange={event => {
+                    const selectedAttribute = event.target.value as Attribute;
+                    handleFilterChange(index, 'attribute', selectedAttribute.attributeName);
+                  }}
+                >
+                  {attributes.map(attribute => (
+                    <MenuItem key={attribute.attributeName} value={attribute}>
+                      {attribute.attributeName}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl fullWidth>
+                <InputLabel id={`filter-operator-select-label-${index}`}>Operador do Filtro</InputLabel>
+                <Select
+                  labelId={`filter-operator-select-label-${index}`}
+                  value={filter.operator}
+                  onChange={event => handleFilterChange(index, 'operator', event.target.value as string)}
+                >
+                  <MenuItem value="equals">Igual a</MenuItem>
+                  <MenuItem value="not equals">Diferente de</MenuItem>
+                  <MenuItem value="contains">Contém</MenuItem>
+                  <MenuItem value="starts with">Começa com</MenuItem>
+                  <MenuItem value="ends with">Termina com</MenuItem>
+                  <MenuItem value="greater than">Maior que</MenuItem>
+                  <MenuItem value="less than">Menor que</MenuItem>
+                </Select>
+              </FormControl>
+
+              <TextField
+                label="Valor do Filtro"
+                value={filter.value}
+                onChange={event => handleFilterChange(index, 'value', event.target.value)}
+              />
+
+              <IconButton onClick={() => {
+                const updatedFilters = [...filters];
+                updatedFilters.splice(index, 1);
+                setFilters(updatedFilters);
+              }} style={{ marginTop: '0.5rem' }}>
+                <ClearIcon />
+              </IconButton>
+            </div>
+          ))}
+
+          <FormControl fullWidth>
+            <InputLabel id="relationship-select-label">Relacionamentos</InputLabel>
             <Select
-              labelId="select-filter-operator-label"
-              id="select-filter-operator"
-              value={filterOperator}
-              onChange={(event) => setFilterOperator(event.target.value as string)}
-              fullWidth
+              labelId="relationship-select-label"
+              multiple
+              value={selectedRelationships}
+              onChange={event => {
+                const selectedRelationships = event.target.value as string[];
+                setSelectedRelationships(selectedRelationships);
+                selectedRelationships.forEach(relationship => {
+                  fetchRelatedTableAttributes(relationship); // Fetch dos atributos da tabela final, por exemplo 'autor'
+                });
+              }}
+              renderValue={selected => (selected as string[]).join(', ')}
             >
-              <MenuItem value="equals">Equals</MenuItem>
-              <MenuItem value="not equals">Not Equals</MenuItem>
-              <MenuItem value="contains">Contains</MenuItem>
-              <MenuItem value="starts with">Starts With</MenuItem>
-              <MenuItem value="ends with">Ends With</MenuItem>
-              <MenuItem value="greater than">Greater Than</MenuItem>
-              <MenuItem value="less than">Less Than</MenuItem>
+              {relationships.map(relationship => (
+                <MenuItem key={relationship.relatedTable} value={relationship.relatedTable}>
+                  {relationship.relation} ({relationship.relatedTable})
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
 
+          {selectedRelationships.map(relationship => (
+            <div key={relationship} style={{ marginTop: '1rem' }}>
+              <FormControl fullWidth>
+                <InputLabel id={`relationship-attributes-select-label-${relationship}`}>Atributos do Relacionamento: {relationship}</InputLabel>
+                <Select
+                  labelId={`relationship-attributes-select-label-${relationship}`}
+                  multiple
+                  value={relationshipAttributes[relationship] || []}
+                  onChange={event => {
+                    const selectedAttributes = event.target.value as Attribute[];
+                    setRelationshipAttributes({
+                      ...relationshipAttributes,
+                      [relationship]: selectedAttributes,
+                    });
+                  }}
+                  renderValue={selected => (selected as Attribute[]).map(attr => attr.attributeName).join(', ')}
+                >
+                  {relationshipAttributes[relationship]?.map(attribute => (
+                    <MenuItem key={attribute.attributeName} value={attribute}>
+                      {attribute.attributeName}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <IconButton onClick={() => handleRemoveRelationship(relationship)} style={{ marginTop: '0.5rem' }}>
+                <ClearIcon />
+              </IconButton>
+            </div>
+          ))}
+
           <TextField
-            label="Valor do Filtro"
-            variant="standard"
-            sx={{ m: 1 }}
-            value={filterValue}
-            onChange={(event) => setFilterValue(event.target.value)}
+            label="Limite"
+            type="number"
+            value={limit}
+            onChange={event => setLimit(parseInt(event.target.value))}
             fullWidth
+            style={{ marginTop: '1rem' }}
           />
-        </div>
+
+          <FormControl fullWidth style={{ marginTop: '1rem' }}>
+            <InputLabel id="order-by-select-label">Ordenar Por</InputLabel>
+            <Select
+              labelId="order-by-select-label"
+              value={orderBy}
+              onChange={event => setOrderBy(event.target.value as string)}
+            >
+              {selectedAttributes.map(attribute => (
+                <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
+                  {attribute.attributeName}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Button onClick={handleGenerateReport} variant="contained" style={{ marginTop: '1rem' }}>
+            Gerar Relatório
+          </Button>
+
+          <Button onClick={handleClearSelection} style={{ marginTop: '1rem' }}>
+            Limpar Seleção
+          </Button>
+        </>
       )}
-
-      {selectedTable && (
-        <FormControl variant="standard" sx={{ m: 1, minWidth: 300 }}>
-          <InputLabel id="select-filter-relationship-label">Selecione Relacionamento para Filtro</InputLabel>
-          <Select
-            labelId="select-filter-relationship-label"
-            id="select-filter-relationship"
-            value={filterRelationship ? filterRelationship.field : ''}
-            onChange={handleFilterRelationshipChange}
-            fullWidth
-          >
-            <MenuItem value="">Nenhum</MenuItem>
-            {relationships.map((relationship) => (
-              <MenuItem key={relationship.field} value={relationship.field}>
-                {relationship.field} ({relationship.relation} com {relationship.relatedTable})
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      )}
-
-      <TextField
-        label="Limite"
-        variant="standard"
-        sx={{ m: 1, minWidth: 300 }}
-        type="number"
-        value={limit}
-        onChange={(event) => setLimit(event.target.value === '' ? '' : Number(event.target.value))}
-        fullWidth
-      />
-
-      <Button variant="contained" sx={{ m: 1, minWidth: 300 }} onClick={handleGenerateReport}>
-        Gerar Relatório
-      </Button>
     </div>
   );
 };
