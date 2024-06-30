@@ -8,6 +8,7 @@ import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import ClearIcon from '@mui/icons-material/Clear';
 import axios from 'axios';
+import Grid from '@mui/material/Grid'; // Adicionado para layout em grid
 
 interface Attribute {
   tableName: string;
@@ -143,7 +144,7 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
       const requestData = {
         tableName: selectedTable,
         filters: filters.map(filter => ({
-          tableName: filter.attribute.tableName, // Inclui o nome da tabela no filtro
+          tableName: filter.attribute.tableName,
           field: filter.attribute.attributeName,
           operator: filter.operator,
           value: filter.value,
@@ -151,7 +152,7 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
         attributes: selectedAttributes,
         relationshipAttributes: relationshipAttrs,
         orderBy: orderBy || undefined,
-        limit: limit || undefined,
+        limit: limit === '' ? undefined : limit,
         relationships: selectedRelationships,
       };
 
@@ -174,7 +175,7 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
 
   return (
     <div>
-      <FormControl fullWidth>
+      <FormControl fullWidth style={{ marginBottom: '1rem' }}>
         <InputLabel id="table-select-label">Tabela</InputLabel>
         <Select
           labelId="table-select-label"
@@ -190,163 +191,200 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
       </FormControl>
 
       {selectedTable && (
-        <>
-          <FormControl fullWidth>
-            <InputLabel id="attributes-select-label">Atributos</InputLabel>
-            <Select
-              labelId="attributes-select-label"
-              multiple
-              value={selectedAttributes}
-              onChange={event => setSelectedAttributes(event.target.value as string[])}
-              renderValue={selected => (selected as string[]).join(', ')}
-            >
-              {attributes.map(attribute => (
-                <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
-                  {attribute.attributeName}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          <Button onClick={handleAddFilter} style={{ marginTop: '1rem' }}>
-            Adicionar Filtro
-          </Button>
-          {filters.map((filter, index) => (
-            <div key={index} style={{ marginTop: '1rem' }}>
-              <FormControl fullWidth>
-                <InputLabel id={`filter-attribute-select-label-${index}`}>Atributo do Filtro</InputLabel>
-                <Select
-                  labelId={`filter-attribute-select-label-${index}`}
-                  value={filter.attribute.attributeName}
-                  onChange={event => handleFilterChange(index, 'attribute', event.target.value as string)}
-                >
-                  {[...attributes, ...Object.values(relationshipAttributes).flat()].map(attribute => (
-                    <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
-                      {attribute.tableName}: {attribute.attributeName}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <FormControl fullWidth>
-                <InputLabel id={`filter-operator-select-label-${index}`}>Operador do Filtro</InputLabel>
-                <Select
-                  labelId={`filter-operator-select-label-${index}`}
-                  value={filter.operator}
-                  onChange={event => handleFilterChange(index, 'operator', event.target.value as string)}
-                >
-                  <MenuItem value="equals">Igual a</MenuItem>
-                  <MenuItem value="not equals">Diferente de</MenuItem>
-                  <MenuItem value="contains">Contém</MenuItem>
-                  <MenuItem value="starts with">Começa com</MenuItem>
-                  <MenuItem value="ends with">Termina com</MenuItem>
-                  <MenuItem value="greater than">Maior que</MenuItem>
-                  <MenuItem value="less than">Menor que</MenuItem>
-                </Select>
-              </FormControl>
-
-              <TextField
-                label="Valor do Filtro"
-                value={filter.value}
-                onChange={event => handleFilterChange(index, 'value', event.target.value)}
-              />
-
-              <IconButton onClick={() => {
-                const updatedFilters = [...filters];
-                updatedFilters.splice(index, 1);
-                setFilters(updatedFilters);
-              }} style={{ marginLeft: '1rem' }}>
-                <ClearIcon />
-              </IconButton>
-            </div>
-          ))}
-
-          <FormControl fullWidth>
-            <InputLabel id="relationship-select-label">Relacionamentos</InputLabel>
-            <Select
-              labelId="relationship-select-label"
-              multiple
-              value={selectedRelationships}
-              onChange={event => {
-                const selectedValues = event.target.value as string[];
-                const newlyAdded = selectedValues.find(val => !selectedRelationships.includes(val));
-                if (newlyAdded) {
-                  const relationship = relationships.find(rel => rel.relatedTable === newlyAdded);
-                  if (relationship) handleAddRelationship(relationship);
-                } else {
-                  setSelectedRelationships(selectedValues);
-                }
-              }}
-              renderValue={selected => (selected as string[]).join(', ')}
-            >
-              {relationships.map(relationship => (
-                <MenuItem key={relationship.relatedTable} value={relationship.relatedTable}>
-                  {relationship.relation}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          {selectedRelationships.map(relatedTable => (
-            <FormControl fullWidth key={relatedTable} style={{ marginTop: '1rem' }}>
-              <InputLabel id={`relationship-attributes-select-label-${relatedTable}`}>Atributos de {relatedTable}</InputLabel>
+        <Grid container spacing={2} alignItems="center">
+          {/* Tabela e Atributos */}
+          <Grid item xs={6}>
+            <FormControl fullWidth>
+              <InputLabel id="attributes-select-label">Atributos</InputLabel>
               <Select
-                labelId={`relationship-attributes-select-label-${relatedTable}`}
+                labelId="attributes-select-label"
                 multiple
-                value={relationshipAttributes[relatedTable]?.map(attr => attr.attributeName) || []}
-                onChange={event => {
-                  const selectedValues = event.target.value as string[];
-                  setRelationshipAttributes({
-                    ...relationshipAttributes,
-                    [relatedTable]: selectedValues.map(value => ({
-                      tableName: relatedTable,
-                      attributeName: value,
-                    })),
-                  });
-                }}
+                value={selectedAttributes}
+                onChange={event => setSelectedAttributes(event.target.value as string[])}
                 renderValue={selected => (selected as string[]).join(', ')}
               >
-                {relationshipAttributes[relatedTable]?.map(attribute => (
+                {attributes.map(attribute => (
                   <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
                     {attribute.attributeName}
                   </MenuItem>
                 ))}
               </Select>
             </FormControl>
+          </Grid>
+
+          {/* Relacionamentos */}
+          <Grid item xs={6}>
+            <FormControl fullWidth>
+              <InputLabel id="relationship-select-label">Relacionamentos</InputLabel>
+              <Select
+                labelId="relationship-select-label"
+                multiple
+                value={selectedRelationships}
+                onChange={event => {
+                  const selectedValues = event.target.value as string[];
+                  const newlyAdded = selectedValues.find(val => !selectedRelationships.includes(val));
+                  if (newlyAdded) {
+                    const relationship = relationships.find(rel => rel.relatedTable === newlyAdded);
+                    if (relationship) handleAddRelationship(relationship);
+                  } else {
+                    setSelectedRelationships(selectedValues);
+                  }
+                }}
+                renderValue={selected => (selected as string[]).join(', ')}
+              >
+                {relationships.map(relationship => (
+                  <MenuItem key={relationship.relatedTable} value={relationship.relatedTable}>
+                    {relationship.relation}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* Atributos dos Relacionamentos */}
+          {selectedRelationships.map(relatedTable => (
+            <Grid item xs={12} key={relatedTable}>
+              <FormControl fullWidth>
+                <InputLabel id={`relationship-attributes-select-label-${relatedTable}`}>
+                  Atributos de {relatedTable}
+                </InputLabel>
+                <Select
+                  labelId={`relationship-attributes-select-label-${relatedTable}`}
+                  multiple
+                  value={relationshipAttributes[relatedTable]?.map(attr => attr.attributeName) || []}
+                  onChange={event => {
+                    const selectedAttributes = event.target.value as string[];
+                    const updatedAttributes = relationshipAttributes[relatedTable]?.filter(attr =>
+                      selectedAttributes.includes(attr.attributeName)
+                    ) || [];
+                    setRelationshipAttributes({
+                      ...relationshipAttributes,
+                      [relatedTable]: updatedAttributes,
+                    });
+                  }}
+                  renderValue={selected => (selected as string[]).join(', ')}
+                >
+                  {relationshipAttributes[relatedTable]?.map(attribute => (
+                    <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
+                      {attribute.attributeName}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
           ))}
-
-          <TextField
-            label="Limite"
-            type="number"
-            value={limit}
-            onChange={event => setLimit(event.target.value === '' ? '' : parseInt(event.target.value, 10))}
-            style={{ width: '50%', marginTop: '1rem' }}
-          />
-
-          <FormControl fullWidth>
-            <InputLabel id="order-by-select-label">Ordenar por</InputLabel>
-            <Select
-              labelId="order-by-select-label"
-              value={orderBy}
-              onChange={event => setOrderBy(event.target.value as string)}
-            >
-              {attributes.map(attribute => (
-                <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
-                  {attribute.attributeName}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          <Button onClick={handleGenerateReport} variant="contained" style={{ marginTop: '1rem' }}>
-            Gerar Relatório
-          </Button>
-
-          <Button onClick={handleClearSelection} variant="outlined" style={{ marginTop: '1rem', marginLeft: '1rem' }}>
-            Limpar Seleção
-          </Button>
-        </>
+        </Grid>
       )}
+
+      <Button onClick={handleAddFilter} style={{ marginTop: '1rem' }}>
+        Adicionar Filtro
+      </Button>
+
+      {/* Filtros */}
+      {filters.map((filter, index) => (
+        <Grid container spacing={2} alignItems="center" key={index} style={{ marginTop: '0.5rem' }}>
+          <Grid item xs={3}>
+            <FormControl fullWidth>
+              <InputLabel id={`filter-attribute-select-label-${index}`}>Atributo do Filtro</InputLabel>
+              <Select
+                labelId={`filter-attribute-select-label-${index}`}
+                value={filter.attribute.attributeName}
+                onChange={(event: SelectChangeEvent<string>) =>
+                  handleFilterChange(index, 'attribute', event.target.value)
+                }
+              >
+                {[...attributes, ...Object.values(relationshipAttributes).flat()].map(attribute => (
+                  <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
+                    {attribute.attributeName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={2}>
+            <FormControl fullWidth>
+              <InputLabel id={`filter-operator-select-label-${index}`}>Operador</InputLabel>
+              <Select
+                labelId={`filter-operator-select-label-${index}`}
+                value={filter.operator}
+                onChange={(event: SelectChangeEvent<string>) =>
+                  handleFilterChange(index, 'operator', event.target.value)
+                }
+              >
+                <MenuItem value="equals">Igual a</MenuItem>
+                <MenuItem value="not equals">Diferente de</MenuItem>
+                <MenuItem value="greater than">Maior que</MenuItem>
+                <MenuItem value="less than">Menor que</MenuItem>
+                <MenuItem value="contains">Contem</MenuItem>
+                <MenuItem value="starts with">Começa com</MenuItem>
+                <MenuItem value="ends with">Termina com</MenuItem>
+                <MenuItem value="Starts with">Começa com</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={3}>
+            <TextField
+              label="Valor do Filtro"
+              value={filter.value}
+              onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                handleFilterChange(index, 'value', event.target.value)
+              }
+            />
+          </Grid>
+          <Grid item xs={1}>
+            <IconButton onClick={() => {
+              const updatedFilters = [...filters];
+              updatedFilters.splice(index, 1);
+              setFilters(updatedFilters);
+            }}>
+              <ClearIcon />
+            </IconButton>
+          </Grid>
+        </Grid>
+      ))}
+
+      {selectedTable && (
+        <Grid container spacing={2} alignItems="center">
+          {/* Limite e Ordenar por */}
+          <Grid item xs={3}>
+            <TextField
+              label="Limite"
+              type="number"
+              value={limit}
+              onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                setLimit(event.target.value === '' ? '' : parseInt(event.target.value, 10))
+              }
+              style={{ width: '100%' }}
+            />
+          </Grid>
+          <Grid item xs={3}>
+            <FormControl fullWidth>
+              <InputLabel id="order-by-select-label">Ordenar por</InputLabel>
+              <Select
+                labelId="order-by-select-label"
+                value={orderBy}
+                onChange={(event: SelectChangeEvent<string>) =>
+                  setOrderBy(event.target.value)
+                }
+              >
+                {[...attributes, ...Object.values(relationshipAttributes).flat()].map(attribute => (
+                  <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
+                    {attribute.attributeName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
+      )}
+
+      <Button onClick={handleGenerateReport} variant="contained" style={{ marginTop: '1rem' }}>
+        Gerar Relatório
+      </Button>
+
+      <Button onClick={handleClearSelection} variant="outlined" style={{ marginTop: '1rem', marginLeft: '1rem' }}>
+        Limpar Seleção
+      </Button>
     </div>
   );
 };

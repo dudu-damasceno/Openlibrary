@@ -87,7 +87,7 @@ const getValidFieldForRelation = async (relationName: string) => {
 };
 
 export const generateReport = async (req: Request, res: Response) => {
-  const { tableName, filters, attributes, relationshipAttributes, orderBy, limit, relationships } = req.body;
+  const { tableName, filters, attributes, relationshipAttributes, orderBy, orderDirection, limit, relationships } = req.body;
   console.log("Dados recebidos:", req.body);
 
   try {
@@ -112,7 +112,7 @@ export const generateReport = async (req: Request, res: Response) => {
             }
             query.select[modelAttr].select[relationAttr] = true;
           } else {
-            query.select[modelAttr] = true;
+            query.select[attr] = true;
           }
         }
       });
@@ -153,8 +153,8 @@ export const generateReport = async (req: Request, res: Response) => {
       });
     }
 
-    if (orderBy) {
-      query.orderBy = { [orderBy.split(".").pop()]: "asc" };
+    if (orderBy && orderDirection) {
+      query.orderBy = { [orderBy.split(".").pop()]: orderDirection.toLowerCase() as "asc" | "desc" };
     }
 
     if (limit) {
@@ -166,21 +166,50 @@ export const generateReport = async (req: Request, res: Response) => {
     const reportData = await prismaClient.findMany(query);
     console.log("Resultado da consulta:", reportData);
 
-    // Mapeia os dados para incluir os autores diretamente em vez de apenas as chaves
     const mappedReportData = await Promise.all(reportData.map(async (item: any) => {
-      if (item.livro_autor) {
-        const livroAutorDetails = await Promise.all(item.livro_autor.map(async (la: any) => {
-          const autorDetails = await prisma.autor.findUnique({
-            where: { autor_key: la.autor_key }
-          });
-          return { ...la, autor: autorDetails };
-        }));
-        return { ...item, livro_autor: livroAutorDetails };
+      if (tableName === 'livro') {
+        if (item.livro_autor) {
+          const livroAutorDetails = await Promise.all(item.livro_autor.map(async (la: any) => {
+            const autorDetails = await prisma.autor.findUnique({
+              where: { autor_key: la.autor_key }
+            });
+            return { ...la, autor: autorDetails };
+          }));
+          return { ...item, livro_autor: livroAutorDetails };
+        }
+      } else if (tableName === 'autor' || tableName === 'categoria') {
+        if (item.livro_autor) {
+          const livroDetails = await Promise.all(item.livro_autor.map(async (la: any) => {
+            const livroDetails = await prisma.livro.findUnique({
+              where: { livro_key: la.livro_key }
+            });
+            return { ...la, livro: livroDetails };
+          }));
+          return { ...item, livro_autor: livroDetails };
+        }
       }
-      return item;
+
+      return item; // Retorna o item original se não for 'livro', 'autor' ou 'categoria'
     }));
 
-    res.status(200).json(mappedReportData);
+    const formattedReportData = mappedReportData.map((item: any) => {
+      const formattedItem: any = { ...item };
+
+      Object.keys(formattedItem).forEach(key => {
+        if (Array.isArray(formattedItem[key])) {
+          formattedItem[key] = formattedItem[key].map((relationItem: any) => {
+            if (relationItem && typeof relationItem === 'object') {
+              return { ...relationItem };
+            }
+            return relationItem;
+          });
+        }
+      });
+
+      return formattedItem;
+    });
+
+    res.status(200).json(formattedReportData);
   } catch (error) {
     console.error("Erro ao gerar relatório:", error);
     res.status(500).json({ error: "Erro ao gerar relatório" });

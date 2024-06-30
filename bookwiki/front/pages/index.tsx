@@ -4,6 +4,7 @@ import Navbar from '../src/components/Navbar';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import SelectVariants from '../src/components/SelectVariants';
+import ReportTable from '../src/components/ReportTable';
 
 const Home: React.FC = () => {
   const [tableName, setTableName] = useState<string>('');
@@ -13,9 +14,6 @@ const Home: React.FC = () => {
     <div style={{ display: 'flex', backgroundColor: '#f0f0f0', minHeight: '100vh' }}>
       <Navbar />
       <Container sx={{ color: '#000', paddingTop: '40px' }}>
-        <Typography variant="body1" paragraph>
-          This is a simple example of a Next.js site with Material-UI.
-        </Typography>
 
         <SelectVariants setTableName={setTableName} setTableData={setTableData} />
         
@@ -25,11 +23,7 @@ const Home: React.FC = () => {
         <Typography variant="body1" gutterBottom>
           Dados da Tabela:
         </Typography>
-        <ul>
-          {tableData.map((row, index) => (
-            <li key={index}>{JSON.stringify(row)}</li>
-          ))}
-        </ul>
+        <ReportTable data={tableData} />
       </Container>
     </div>
   );
