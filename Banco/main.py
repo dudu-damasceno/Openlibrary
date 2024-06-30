@@ -76,12 +76,19 @@ class DatabaseHandler:
         languages = book.get('language', [])
         if not isinstance(languages, list):
             languages = [languages]
+
+        isbn = book.get('isbn')
+        if isinstance(isbn, list) and isbn:
+            isbn = isbn[0]  # Pega apenas o primeiro ISBN da lista
+        elif isinstance(isbn, str):
+            # Verifica se há vários ISBNs separados por vírgula e pega o primeiro
+            isbn = isbn.split(',')[0].strip()
         try:
             self.cursor.execute(f"""
                 INSERT INTO {table_name} (livro_key, titulo, subtitulo, ano_publicacao, qtd_paginas, qtd_avaliacoes, capa_url)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (livro_key) DO NOTHING
-            """, (livro_key, book.get('title'), book.get('subtitle', ''), ano_publicacao, book.get('number_of_pages_median', 0), book.get('ratings_average', 0), f"https://covers.openlibrary.org/b/olid/{livro_key}-L.jpg"))
+            """, (livro_key, book.get('title'), book.get('subtitle', ''), ano_publicacao, book.get('number_of_pages_median', 0), book.get('ratings_average', 0), f"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg"))
 
             for subject in categorias:
                 subject = subject.strip()
@@ -247,8 +254,8 @@ def main():
     book_processor = BookProcessor(api, db_handler)
 
     query = 'first_publish_year:[2000 TO 2023] AND edition_count:1'
-    fields = 'publisher,language,author_key,author_name,title,subtitle,publish_year,number_of_pages_median,key,subject,ratings_average'
-    limit = 10
+    fields = 'publisher,language,author_key,author_name,title,subtitle,publish_year,number_of_pages_median,key,subject,ratings_average, isbn'
+    limit = 20000
 
     book_processor.process_books(query, fields, limit)
 
