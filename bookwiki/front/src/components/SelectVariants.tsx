@@ -114,12 +114,10 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
   const handleFilterChange = (index: number, field: keyof Filter, value: string) => {
     const updatedFilters = [...filters];
     if (field === 'attribute') {
-      const selectedAttribute = [...attributes, ...Object.values(relationshipAttributes).flat()].find(attr => attr.attributeName === value);
-      if (selectedAttribute) {
-        updatedFilters[index][field] = selectedAttribute;
-      }
+      const [tableName, attributeName] = value.split('.');
+      updatedFilters[index].attribute = { tableName, attributeName };
     } else {
-      updatedFilters[index][field] = value;
+        updatedFilters[index][field] = value;
     }
     setFilters(updatedFilters);
   };
@@ -288,15 +286,15 @@ const SelectVariants: React.FC<SelectVariantsProps> = ({ setTableName, setTableD
               <InputLabel id={`filter-attribute-select-label-${index}`}>Atributo do Filtro</InputLabel>
               <Select
                 labelId={`filter-attribute-select-label-${index}`}
-                value={filter.attribute.attributeName}
+                value={`${filter.attribute.tableName}.${filter.attribute.attributeName}`}
                 onChange={(event: SelectChangeEvent<string>) =>
                   handleFilterChange(index, 'attribute', event.target.value)
                 }
               >
                 {[...attributes, ...Object.values(relationshipAttributes).flat()].map(attribute => (
-                  <MenuItem key={attribute.attributeName} value={attribute.attributeName}>
-                    {attribute.attributeName}
-                  </MenuItem>
+                  <MenuItem key={`${attribute.tableName}.${attribute.attributeName}`} value={`${attribute.tableName}.${attribute.attributeName}`}>
+                  {`${attribute.tableName}.${attribute.attributeName}`}
+               </MenuItem>
                 ))}
               </Select>
             </FormControl>
