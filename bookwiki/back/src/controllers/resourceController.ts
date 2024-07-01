@@ -175,9 +175,29 @@ export const generateReport = async (req: Request, res: Response) => {
             });
             return { ...la, autor: autorDetails };
           }));
-          return { ...item, livro_autor: livroAutorDetails };
+          item.livro_autor = livroAutorDetails;
         }
-      } else if (tableName === 'autor' || tableName === 'categoria') {
+
+        if (item.livro_categoria) {
+          const livroCategoriaDetails = await Promise.all(item.livro_categoria.map(async (lc: any) => {
+            const categoriaDetails = await prisma.categoria.findUnique({
+              where: { categoria_id: lc.categoria_id }
+            });
+            return { ...lc, categoria: categoriaDetails };
+          }));
+          item.livro_categoria = livroCategoriaDetails;
+        }
+      } else if (tableName === 'categoria') {
+        if (item.livro_categoria) {
+          const livroDetails = await Promise.all(item.livro_categoria.map(async (lc: any) => {
+            const livroDetails = await prisma.livro.findUnique({
+              where: { livro_key: lc.livro_key }
+            });
+            return { ...lc, livro: livroDetails };
+          }));
+          item.livro_categoria = livroDetails;
+        }
+      } else if (tableName === 'autor') {
         if (item.livro_autor) {
           const livroDetails = await Promise.all(item.livro_autor.map(async (la: any) => {
             const livroDetails = await prisma.livro.findUnique({
@@ -185,11 +205,11 @@ export const generateReport = async (req: Request, res: Response) => {
             });
             return { ...la, livro: livroDetails };
           }));
-          return { ...item, livro_autor: livroDetails };
+          item.livro_autor = livroDetails;
         }
       }
 
-      return item; // Retorna o item original se não for 'livro', 'autor' ou 'categoria'
+      return item;
     }));
 
     const formattedReportData = mappedReportData.map((item: any) => {
